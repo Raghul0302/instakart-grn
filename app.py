@@ -41,7 +41,13 @@ os.makedirs("downloads", exist_ok=True)
 # =========================================================
 
 def get_sheets():
-    creds       = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+    import json as _json
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+    if creds_json:
+        creds_dict = _json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    else:
+        creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
     gc          = gspread.authorize(creds)
     spreadsheet = gc.open(SPREADSHEET_NAME)
     inp         = spreadsheet.worksheet(INPUT_SHEET)
