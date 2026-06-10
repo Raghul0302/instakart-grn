@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Instakart – GRN Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:      #1a3bb5;
+  --blue-dark: #142d90;
+  --blue-lt:   #eef1fb;
+  --blue-mid:  #c5d0f5;
+  --green:     #00875a;
+  --red:       #c0392b;
+  --bg:        #f0f2f7;
+  --card:      #ffffff;
+  --text:      #1a1a1a;
+  --muted:     #6b7280;
+  --border:    #dde3f0;
+  --radius:    12px;
+}
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  color: var(--text);
+  padding-bottom: 60px;
+}
+
+/* ── Header ── */
+.site-header {
+  background: var(--blue);
+  padding: 0 20px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(26,59,181,0.25);
+}
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.header-logo {
+  background: white;
+  color: var(--blue);
+  font-weight: 800;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.header-title {
+  color: rgba(255,255,255,0.85);
+  font-size: 14px;
+  font-weight: 500;
+}
+.header-badge {
+  background: rgba(255,255,255,0.15);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+
+/* ── Layout ── */
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+/* ── Steps indicator ── */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 28px;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  position: relative;
+}
+.step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: calc(50% + 16px);
+  right: calc(-50% + 16px);
+  top: 15px;
+  height: 2px;
+  background: var(--border);
+  transition: background 0.3s;
+}
+.step.done:not(:last-child)::after { background: var(--blue); }
+.step-num {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: all 0.3s;
+  z-index: 1;
+  margin: 0 auto;
+}
+.step.active .step-num {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: white;
+}
+.step.done .step-num {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: white;
+}
+.step-label {
+  display: none;
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 22px 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+/* ── Upload zone ── */
+.upload-zone {
+  border: 2px dashed var(--blue-mid);
+  border-radius: 10px;
+  padding: 36px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--blue-lt);
+  position: relative;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--blue); background: #e0e7ff; }
+.upload-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+.upload-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+  display: block;
+}
+.upload-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--blue);
+  margin-bottom: 4px;
+}
+.upload-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.file-chosen {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--blue-lt);
+  border: 1.5px solid var(--blue-mid);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 12px;
+}
+.file-chosen-icon { font-size: 20px; }
+.file-chosen-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--blue);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-chosen-size {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 9px;
+  padding: 13px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.18s;
+  width: 100%;
+  margin-top: 14px;
+}
+.btn-primary {
+  background: var(--blue);
+  color: white;
+}
+.btn-primary:hover { background: var(--blue-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(26,59,181,0.25); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { background: #a0aec0; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-outline {
+  background: white;
+  color: var(--blue);
+  border: 1.5px solid var(--blue-mid);
+}
+.btn-outline:hover { background: var(--blue-lt); }
+.btn-success {
+  background: var(--green);
+  color: white;
+}
+.btn-success:hover { background: #006644; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,135,90,0.25); }
+
+/* ── Status banner ── */
+.banner {
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.banner-icon { font-size: 20px; flex-shrink: 0; }
+.banner.valid   { background: #d1fae5; border: 1.5px solid #6ee7b7; color: #065f46; }
+.banner.invalid { background: #fee2e2; border: 1.5px solid #fca5a5; color: #991b1b; }
+.banner.info    { background: var(--blue-lt); border: 1.5px solid var(--blue-mid); color: var(--blue); }
+
+/* ── Pre-filled info row ── */
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.info-item {
+  background: var(--blue-lt);
+  border: 1px solid var(--blue-mid);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.info-item-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.info-item-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── SEAL FORM ── */
+.seal-wrapper {
+  border: 2.5px solid var(--blue);
+  border-radius: 7px;
+  overflow: hidden;
+  background: white;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 12px rgba(26,59,181,0.08);
+}
+.seal-title {
+  background: var(--blue);
+  color: white;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  padding: 8px 0;
+  text-transform: uppercase;
+}
+.seal-sub {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 2px solid var(--blue);
+  background: var(--blue-lt);
+}
+.seal-sub-left {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--blue);
+  text-transform: uppercase;
+  border-right: 2px solid var(--blue);
+  display: flex;
+  align-items: center;
+}
+.seal-sub-right {
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+}
+.seal-row {
+  display: grid;
+  border-bottom: 1.5px solid var(--blue);
+}
+.seal-row:last-child { border-bottom: none; }
+.seal-row.cols-4     { grid-template-columns: 1.8fr 1fr 1.5fr 1fr; }
+.seal-row.cols-1     { grid-template-columns: 1fr; }
+.seal-row.cols-sign  { grid-template-columns: 1.1fr 1.9fr; }
+.seal-row.cols-remark{ grid-template-columns: 90px 1fr; }
+
+.cell {
+  padding: 5px 10px;
+  border-right: 1.5px solid var(--blue);
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.cell:last-child { border-right: none; }
+.cell-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+}
+.cell input[type="text"],
+.cell input[type="number"] {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px dashed #b0bde8;
+  outline: none;
+  width: 100%;
+  padding: 2px 0;
+  font-family: inherit;
+  min-height: 22px;
+}
+.cell input::placeholder { color: #c0c8e8; font-weight: 400; font-size: 12px; }
+.cell input:focus { border-bottom-color: var(--blue); }
+
+/* Signature canvas */
+.sign-wrap {
+  position: relative;
+  width: 100%;
+  flex: 1;
+}
+.sign-canvas {
+  display: block;
+  width: 100%;
+  height: 52px;
+  cursor: crosshair;
+  touch-action: none;
+  border-radius: 3px;
+}
+.sign-placeholder {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  color: #c0c8e8;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.clear-btn {
+  position: absolute;
+  top: 2px; right: 2px;
+  font-size: 10px;
+  color: #e00540;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 3px;
+  font-family: inherit;
+  display: none;
+}
+.seal-footer {
+  background: var(--blue);
+  color: white;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 7px 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ── Row of small buttons below seal ── */
+.seal-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.seal-actions .btn {
+  margin-top: 0;
+  padding: 9px 14px;
+  font-size: 13px;
+  flex: 1;
+}
+
+/* ── Loading overlay ── */
+.loading-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10,20,60,0.55);
+  z-index: 999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+}
+.loading-overlay.show { display: flex; }
+.spinner {
+  width: 48px; height: 48px;
+  border: 4px solid rgba(255,255,255,0.2);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text {
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed;
+  bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(70px);
+  background: var(--blue);
+  color: white;
+  padding: 11px 22px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  transition: transform 0.3s ease;
+  z-index: 1000;
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--red); }
+.toast.success { background: var(--green); }
+
+/* ── Hidden utility ── */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="header-brand">
+    <span class="header-logo">Instakart</span>
+    <span class="header-title">GRN Portal</span>
+  </div>
+  <span class="header-badge">Darkstore</span>
+</header>
+
+<div class="page">
+
+  <!-- Steps -->
+  <div class="steps" id="stepsBar">
+    <div class="step active" id="s1"><div class="step-num">1</div></div>
+    <div class="step"        id="s2"><div class="step-num">2</div></div>
+    <div class="step"        id="s3"><div class="step-num">✓</div></div>
+  </div>
+
+  <!-- ════════════════════════════════ STEP 1: Upload ════ -->
+  <div id="step1">
+    <div class="card">
+      <div class="card-title">📄 Upload POD PDF</div>
+      <div class="card-sub">Upload the POD PDF you received. We'll verify the invoice against records and pre-fill the GRN seal for you.</div>
+
+      <div class="upload-zone" id="dropZone">
+        <input type="file" id="pdfInput" accept="application/pdf" />
+        <span class="upload-icon">📂</span>
+        <div class="upload-text">Tap to choose PDF</div>
+        <div class="upload-hint">or drag and drop here · PDF files only</div>
+      </div>
+
+      <div class="file-chosen hidden" id="fileChosen">
+        <span class="file-chosen-icon">📄</span>
+        <span class="file-chosen-name" id="fileName">—</span>
+        <span class="file-chosen-size" id="fileSize">—</span>
+      </div>
+
+      <button class="btn btn-primary" id="validateBtn" disabled onclick="validatePDF()">
+        🔍 Verify Invoice
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════ STEP 2: Seal form ════ -->
+  <div id="step2" class="hidden">
+
+    <!-- Validation result banner -->
+    <div class="banner valid" id="validBanner">
+      <span class="banner-icon">✅</span>
+      <div>
+        <strong>Invoice Verified</strong><br>
+        <span id="bannerDetail">—</span>
+      </div>
+    </div>
+
+    <!-- Pre-filled info -->
+    <div class="info-grid" id="infoGrid">
+      <div class="info-item">
+        <div class="info-item-label">Invoice ID</div>
+        <div class="info-item-value" id="disp_invoice">—</div>
+      </div>
+      <div class="info-item">
+        <div class="info-item-label">Store</div>
+        <div class="info-item-value" id="disp_store">—</div>
+      </div>
+      <div class="info-item">
+        <div class="info-item-label">City</div>
+        <div class="info-item-value" id="disp_city">—</div>
+      </div>
+      <div class="info-item">
+        <div class="info-item-label">Date</div>
+        <div class="info-item-value" id="disp_date">—</div>
+      </div>
+    </div>
+
+    <!-- GRN Seal Form -->
+    <div class="card">
+      <div class="card-title">🔏 GRN Digital Seal</div>
+      <div class="card-sub">Fill in the details and sign. All fields except Remark are required.</div>
+
+      <div class="seal-wrapper">
+        <div class="seal-title">INSTAKART SERVICES PVT. LTD.</div>
+
+        <div class="seal-sub">
+          <div class="seal-sub-left">GRN SEAL</div>
+          <div class="seal-sub-right" id="storeName">—</div>
+        </div>
+
+        <!-- Row 1: Date / Time / Inv Qty / Rcvd Qty -->
+        <div class="seal-row cols-4">
+          <div class="cell">
+            <div class="cell-label">Date</div>
+            <input type="text" id="dateField" placeholder="DD/MM/YY" />
+          </div>
+          <div class="cell">
+            <div class="cell-label">Time</div>
+            <input type="text" id="timeField" placeholder="HH:MM" />
+          </div>
+          <div class="cell">
+            <div class="cell-label">Invoice Qty / Box</div>
+            <input type="number" id="invQty" placeholder="0" min="0" />
+          </div>
+          <div class="cell">
+            <div class="cell-label">Received Qty / Box</div>
+            <input type="number" id="rcvdQty" placeholder="0" min="0" />
+          </div>
+        </div>
+
+        <!-- Row 2: Inward Reg -->
+        <div class="seal-row cols-1">
+          <div class="cell">
+            <div class="cell-label">Inward Reg. Sl. No.</div>
+            <input type="text" id="inwardReg" placeholder="Registration number" />
+          </div>
+        </div>
+
+        <!-- Row 3: Security -->
+        <div class="seal-row cols-sign">
+          <div class="cell">
+            <div class="cell-label">Security Name / ID</div>
+            <input type="text" id="securityName" placeholder="Name / ID" />
+          </div>
+          <div class="cell">
+            <div class="cell-label">Security Sign.</div>
+            <div class="sign-wrap">
+              <canvas class="sign-canvas" id="secCanvas"></canvas>
+              <span class="sign-placeholder" id="secPlaceholder">Sign here with finger or mouse</span>
+              <button class="clear-btn" id="clearSec" onclick="clearCanvas('secCanvas','secPlaceholder','clearSec')">✕ clear</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: HL Executive -->
+        <div class="seal-row cols-sign">
+          <div class="cell">
+            <div class="cell-label">HL Executive Name / ID</div>
+            <input type="text" id="hlName" placeholder="Name / ID" />
+          </div>
+          <div class="cell">
+            <div class="cell-label">HL Executive Sign.</div>
+            <div class="sign-wrap">
+              <canvas class="sign-canvas" id="hlCanvas"></canvas>
+              <span class="sign-placeholder" id="hlPlaceholder">Sign here with finger or mouse</span>
+              <button class="clear-btn" id="clearHl" onclick="clearCanvas('hlCanvas','hlPlaceholder','clearHl')">✕ clear</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 5: Remark -->
+        <div class="seal-row cols-remark">
+          <div class="cell">
+            <div class="cell-label">Remark</div>
+          </div>
+          <div class="cell">
+            <input type="text" id="remark" placeholder="e.g. 3 Qty Damaged" />
+          </div>
+        </div>
+
+        <div class="seal-footer">Received Physical Count &amp; Quality subject to verification</div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="seal-actions">
+        <button class="btn btn-outline" onclick="autoFill()">🕐 Fill date &amp; time</button>
+        <button class="btn btn-outline" onclick="resetSeal()">↺ Reset form</button>
+      </div>
+
+      <button class="btn btn-success" onclick="submitAndDownload()">
+        ⬇️ Submit & Download Merged PDF
+      </button>
+      <button class="btn btn-outline" style="margin-top:8px" onclick="goBack()">← Change PDF</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════ STEP 3: Done ════ -->
+  <div id="step3" class="hidden">
+    <div class="card" style="text-align:center;padding:40px 20px;">
+      <div style="font-size:52px;margin-bottom:12px;">✅</div>
+      <div style="font-size:20px;font-weight:800;color:var(--blue);margin-bottom:8px;">GRN Complete!</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:24px;line-height:1.6;">
+        Your merged PDF (POD + Seal) has been downloaded.<br>
+        Data has been recorded in the master sheet.
+      </div>
+      <div class="banner info" style="text-align:left;margin-bottom:20px;">
+        <span class="banner-icon">📋</span>
+        <div>Attach this PDF to your Flipkart submission. Keep a copy for store records.</div>
+      </div>
+      <button class="btn btn-primary" onclick="startOver()">📄 Process Another POD</button>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Verifying invoice…</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════
+let uploadedFile = null;
+let verifiedData = {};
+const ctxMap     = {};
+
+// ════════════════════════════════════════════════
+// FILE UPLOAD
+// ════════════════════════════════════════════════
+const pdfInput  = document.getElementById('pdfInput');
+const dropZone  = document.getElementById('dropZone');
+const fileChosen = document.getElementById('fileChosen');
+const validateBtn = document.getElementById('validateBtn');
+
+pdfInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') handleFile(f);
+  else showToast('Please drop a PDF file.', 'error');
+});
+
+function handleFile(file) {
+  if (file.type !== 'application/pdf') { showToast('Please select a PDF file.', 'error'); return; }
+  uploadedFile = file;
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = formatSize(file.size);
+  fileChosen.classList.remove('hidden');
+  validateBtn.disabled = false;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+// ════════════════════════════════════════════════
+// STEP 1 → VALIDATE
+// ════════════════════════════════════════════════
+async function validatePDF() {
+  if (!uploadedFile) { showToast('Please select a PDF first.', 'error'); return; }
+
+  showLoading('Verifying invoice ID…');
+
+  const fd = new FormData();
+  fd.append('pdf', uploadedFile);
+
+  try {
+    const res  = await fetch('/validate', { method: 'POST', body: fd });
+    const data = await res.json();
+    hideLoading();
+
+    if (data.valid) {
+      verifiedData = data;
+      showStep2(data);
+    } else {
+      showToast(data.error || 'Invoice not found.', 'error');
+    }
+  } catch(e) {
+    hideLoading();
+    showToast('Network error. Check connection.', 'error');
+  }
+}
+
+// ════════════════════════════════════════════════
+// STEP 2: Show seal form with pre-fill
+// ════════════════════════════════════════════════
+function showStep2(data) {
+  document.getElementById('step1').classList.add('hidden');
+  document.getElementById('step2').classList.remove('hidden');
+
+  // Steps
+  document.getElementById('s1').className = 'step done';
+  document.getElementById('s2').className = 'step active';
+
+  // Banner
+  document.getElementById('bannerDetail').textContent =
+    `Invoice ${data.invoice_id} matched — ${data.store}, ${data.city}`;
+
+  // Info grid
+  document.getElementById('disp_invoice').textContent = data.invoice_id || '—';
+  document.getElementById('disp_store').textContent   = data.store      || '—';
+  document.getElementById('disp_city').textContent    = data.city       || '—';
+  document.getElementById('disp_date').textContent    = data.date       || '—';
+  document.getElementById('storeName').textContent    = data.store      || '—';
+
+  // Init canvases
+  setupCanvas('secCanvas', 'secPlaceholder', 'clearSec');
+  setupCanvas('hlCanvas',  'hlPlaceholder',  'clearHl');
+
+  // Auto-fill time
+  autoFill();
+
+  // Pre-fill date from sheet if available
+  if (data.date) document.getElementById('dateField').value = data.date;
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ════════════════════════════════════════════════
+// STEP 2 → SUBMIT
+// ════════════════════════════════════════════════
+async function submitAndDownload() {
+  // Validate required fields
+  const required = [
+    ['dateField',     'Date'],
+    ['timeField',     'Time'],
+    ['invQty',        'Invoice Qty'],
+    ['rcvdQty',       'Received Qty'],
+    ['inwardReg',     'Inward Reg. No.'],
+    ['securityName',  'Security Name'],
+    ['hlName',        'HL Executive Name'],
+  ];
+  for (const [id, label] of required) {
+    if (!document.getElementById(id).value.trim()) {
+      showToast(`Please fill in: ${label}`, 'error'); return;
+    }
+  }
+
+  showLoading('Running OCR & writing to sheet…');
+
+  const sealData = {
+    invoice_id   : verifiedData.invoice_id,
+    store        : verifiedData.store,
+    city         : verifiedData.city,
+    date         : document.getElementById('dateField').value.trim(),
+    time         : document.getElementById('timeField').value.trim(),
+    inv_qty      : document.getElementById('invQty').value.trim(),
+    rcvd_qty     : document.getElementById('rcvdQty').value.trim(),
+    inward_reg   : document.getElementById('inwardReg').value.trim(),
+    security_name: document.getElementById('securityName').value.trim(),
+    security_sign: document.getElementById('secCanvas').toDataURL('image/png'),
+    hl_name      : document.getElementById('hlName').value.trim(),
+    hl_sign      : document.getElementById('hlCanvas').toDataURL('image/png'),
+    remark       : document.getElementById('remark').value.trim(),
+  };
+
+  const fd = new FormData();
+  fd.append('pdf', uploadedFile);
+  fd.append('seal_data', JSON.stringify(sealData));
+
+  try {
+    const res = await fetch('/submit', { method: 'POST', body: fd });
+    hideLoading();
+
+    if (!res.ok) {
+      const err = await res.json();
+      showToast(err.error || 'Submission failed.', 'error'); return;
+    }
+
+    // Trigger download
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `GRN_${verifiedData.store}_Inv${verifiedData.invoice_id}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showStep3();
+  } catch(e) {
+    hideLoading();
+    showToast('Network error. Please try again.', 'error');
+  }
+}
+
+// ════════════════════════════════════════════════
+// STEP 3: Done
+// ════════════════════════════════════════════════
+function showStep3() {
+  document.getElementById('step2').classList.add('hidden');
+  document.getElementById('step3').classList.remove('hidden');
+  document.getElementById('s2').className = 'step done';
+  document.getElementById('s3').className = 'step done';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function startOver() {
+  uploadedFile = null;
+  verifiedData = {};
+  document.getElementById('pdfInput').value  = '';
+  document.getElementById('fileName').textContent = '—';
+  document.getElementById('fileSize').textContent = '—';
+  document.getElementById('fileChosen').classList.add('hidden');
+  validateBtn.disabled = true;
+
+  document.getElementById('step3').classList.add('hidden');
+  document.getElementById('step2').classList.add('hidden');
+  document.getElementById('step1').classList.remove('hidden');
+
+  document.getElementById('s1').className = 'step active';
+  document.getElementById('s2').className = 'step';
+  document.getElementById('s3').className = 'step';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function goBack() {
+  document.getElementById('step2').classList.add('hidden');
+  document.getElementById('step1').classList.remove('hidden');
+  document.getElementById('s1').className = 'step active';
+  document.getElementById('s2').className = 'step';
+}
+
+// ════════════════════════════════════════════════
+// CANVAS / SIGNATURE
+// ════════════════════════════════════════════════
+function setupCanvas(id, placeholderId, clearBtnId) {
+  const canvas = document.getElementById(id);
+  const placeholder = document.getElementById(placeholderId);
+  const clearBtn    = document.getElementById(clearBtnId);
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    const w = canvas.parentElement.offsetWidth || 300;
+    canvas.width  = w;
+    canvas.height = 52;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  ctx.strokeStyle = '#1a3bb5';
+  ctx.lineWidth   = 1.8;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctxMap[id]      = ctx;
+
+  let drawing = false;
+
+  function getPos(e) {
+    const r   = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return {
+      x: (src.clientX - r.left) * (canvas.width  / r.width),
+      y: (src.clientY - r.top)  * (canvas.height / r.height)
+    };
+  }
+  function start(e) {
+    e.preventDefault(); drawing = true;
+    placeholder.style.display = 'none';
+    clearBtn.style.display    = 'block';
+    const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+  }
+  function move(e) {
+    e.preventDefault();
+    if (!drawing) return;
+    const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke();
+  }
+  function end() { drawing = false; }
+
+  canvas.addEventListener('mousedown',  start);
+  canvas.addEventListener('mousemove',  move);
+  canvas.addEventListener('mouseup',    end);
+  canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove',  move,  { passive: false });
+  canvas.addEventListener('touchend',   end);
+}
+
+function clearCanvas(canvasId, placeholderId, clearBtnId) {
+  const canvas = document.getElementById(canvasId);
+  const ctx    = ctxMap[canvasId] || canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById(placeholderId).style.display = 'block';
+  document.getElementById(clearBtnId).style.display    = 'none';
+}
+
+// ════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════
+function autoFill() {
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2,'0');
+  const mm  = String(now.getMonth()+1).padStart(2,'0');
+  const yy  = String(now.getFullYear()).slice(2);
+  document.getElementById('dateField').value = `${dd}/${mm}/${yy}`;
+  const hh  = String(now.getHours()).padStart(2,'0');
+  const mn  = String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('timeField').value = `${hh}:${mn}`;
+}
+
+function resetSeal() {
+  ['dateField','timeField','invQty','rcvdQty','inwardReg','securityName','hlName','remark']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  clearCanvas('secCanvas','secPlaceholder','clearSec');
+  clearCanvas('hlCanvas','hlPlaceholder','clearHl');
+}
+
+function showLoading(msg) {
+  document.getElementById('loadingText').textContent = msg || 'Processing…';
+  document.getElementById('loadingOverlay').classList.add('show');
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('show');
+}
+
+let toastTimer;
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3800);
+}
+</script>
+</body>
+</html>
