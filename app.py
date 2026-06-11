@@ -3,7 +3,7 @@ import re
 import io
 import json
 import base64
-import requests
+import tempfile
 import pdfplumber
 import gspread
 
@@ -15,7 +15,6 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as rl_canvas
 from PyPDF2 import PdfReader, PdfWriter
-from PIL import Image
 from datetime import datetime
 
 app = Flask(__name__)
@@ -78,7 +77,6 @@ def numeric_id(val):
 def extract_invoice_id(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         full_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    # Try multiple patterns
     patterns = [
         r'Invoice[:\s#No\.]*\s*([A-Z0-9\-]{5,20})',
         r'Inv[:\s#No\.]*\s*([A-Z0-9\-]{5,20})',
@@ -88,7 +86,6 @@ def extract_invoice_id(pdf_path):
         m = re.search(pat, full_text, re.IGNORECASE)
         if m:
             val = m.group(1).strip()
-            # Must have at least 5 digits
             if re.search(r'\d{5}', val):
                 return val
     return None
@@ -120,7 +117,6 @@ def parse_pod_pdf(pdf_path):
                     if not row or not row[0]: continue
                     fsn = str(row[0]).strip()
                     if not re.fullmatch(r'[A-Z0-9]{10,20}', fsn): continue
-                    # Make sure row has enough columns
                     while len(row) < 8:
                         row.append("0")
                     fsn_rows.append({
@@ -147,16 +143,32 @@ def lookup_sheet_record(input_sheet, invoice_id):
 
 
 def ensure_output_header(output_sheet):
-    """Make sure the output sheet always has headers in row 1."""
     try:
         existing = output_sheet.get_all_values()
-        if not existing or existing[0] != HEADERS:
-            if not existing:
-                output_sheet.append_row(HEADERS)
-            else:
-                output_sheet.insert_row(HEADERS, 1)
+        if not existing:
+            output_sheet.append_row(HEADERS)
+        elif existing[0] != HEADERS:
+            output_sheet.insert_row(HEADERS, 1)
     except Exception:
         pass
+
+
+def b64_to_tempfile(b64_str):
+    """Decode base64 PNG and save to a temp file. Returns temp file path."""
+    if not b64_str:
+        return None
+    try:
+        raw = b64_str
+        if "," in raw:
+            raw = raw.split(",", 1)[1]
+        img_bytes = base64.b64decode(raw)
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.write(img_bytes)
+        tmp.flush()
+        tmp.close()
+        return tmp.name
+    except Exception:
+        return None
 
 
 # =========================================================
@@ -177,10 +189,14 @@ def build_seal_pdf(data: dict) -> bytes:
     BW = W - ML - MR
     y  = H - 25 * mm
 
-    # Inv No
+    # Save signatures to temp files
+    sec_img = b64_to_tempfile(data.get("security_sign", ""))
+    hl_img  = b64_to_tempfile(data.get("hl_sign", ""))
+
+    # Inv No header
     c.setFont("Helvetica-Bold", 13)
     c.setFillColor(BLACK)
-    c.drawCentredString(W / 2, y, f"Inv No.: {data.get('invoice_id', '—')}")
+    c.drawCentredString(W / 2, y, f"Inv No.: {data.get('invoice_id', '')}")
     y -= 13 * mm
 
     # Title bar
@@ -203,43 +219,42 @@ def build_seal_pdf(data: dict) -> bytes:
     c.drawRightString(ML + BW - 3 * mm, y - 5 * mm, data.get("store", ""))
     y -= 8 * mm
 
+    def draw_cell(cx, cy, cw, rh, label=None, value=None, img_path=None):
+        c.setFillColor(WHITE)
+        c.setStrokeColor(BLUE)
+        c.setLineWidth(0.4)
+        c.rect(cx, cy - rh, cw, rh, fill=1, stroke=1)
+        if label:
+            c.setFont("Helvetica-Bold", 7.5)
+            c.setFillColor(BLUE)
+            c.drawString(cx + 2.5 * mm, cy - 4.5 * mm, label)
+        if value:
+            c.setFont("Helvetica-Bold", 11)
+            c.setFillColor(BLACK)
+            c.drawString(cx + 2.5 * mm, cy - rh + 3 * mm, str(value))
+        if img_path and os.path.exists(img_path):
+            try:
+                c.drawImage(
+                    img_path,
+                    cx + 1.5 * mm, cy - rh + 2 * mm,
+                    cw - 3 * mm, rh - 6 * mm,
+                    preserveAspectRatio=True, mask="auto"
+                )
+            except Exception:
+                pass
+
     def draw_row(cells, rh_mm):
         nonlocal y
         rh = rh_mm * mm
         cx = ML
         for cell in cells:
             cw = BW * cell["w"]
-            c.setFillColor(WHITE)
-            c.setStrokeColor(BLUE)
-            c.setLineWidth(0.4)
-            c.rect(cx, y - rh, cw, rh, fill=1, stroke=1)
-            if cell.get("label"):
-                c.setFont("Helvetica-Bold", 7.5)
-                c.setFillColor(BLUE)
-                c.drawString(cx + 2.5 * mm, y - 4.5 * mm, cell["label"])
-            if cell.get("value"):
-                c.setFont("Helvetica-Bold", 11)
-                c.setFillColor(BLACK)
-                c.drawString(cx + 2.5 * mm, y - rh + 3 * mm, str(cell["value"]))
-            if cell.get("sign_b64"):
-                try:
-                    raw = cell["sign_b64"]
-                    # strip data URI prefix if present
-                    if "," in raw:
-                        raw = raw.split(",", 1)[1]
-                    img_data = base64.b64decode(raw)
-                    img_buf  = io.BytesIO(img_data)
-                    c.drawImage(
-                        img_buf,
-                        cx + 1.5 * mm, y - rh + 2 * mm,
-                        cw - 3 * mm, rh - 6 * mm,
-                        preserveAspectRatio=True, mask="auto"
-                    )
-                except Exception as ex:
-                    # draw error text so we know it failed
-                    c.setFont("Helvetica", 7)
-                    c.setFillColor(colors.red)
-                    c.drawString(cx + 2 * mm, y - rh + 3 * mm, f"[sig err: {ex}]")
+            draw_cell(
+                cx, y, cw, rh,
+                label    = cell.get("label"),
+                value    = cell.get("value"),
+                img_path = cell.get("img_path"),
+            )
             cx += cw
         y -= rh
 
@@ -250,27 +265,31 @@ def build_seal_pdf(data: dict) -> bytes:
         {"label": "Received Qty / Box", "value": data.get("rcvd_qty",""), "w": 0.22},
     ], 13)
 
-    draw_row([{"label": "Inward Reg. Sl. No.", "value": data.get("inward_reg",""), "w": 1}], 10)
+    draw_row([
+        {"label": "Inward Reg. Sl. No.", "value": data.get("inward_reg",""), "w": 1}
+    ], 10)
 
     draw_row([
-        {"label": "Security Name / ID", "value": data.get("security_name",""),  "w": 0.38},
-        {"label": "Security Sign.",     "sign_b64": data.get("security_sign",""), "w": 0.62},
+        {"label": "Security Name / ID", "value": data.get("security_name",""), "w": 0.38},
+        {"label": "Security Sign.",     "img_path": sec_img,                   "w": 0.62},
     ], 22)
 
     draw_row([
-        {"label": "HL Executive Name / ID", "value": data.get("hl_name",""),   "w": 0.38},
-        {"label": "HL Executive Sign.",     "sign_b64": data.get("hl_sign",""), "w": 0.62},
+        {"label": "HL Executive Name / ID", "value": data.get("hl_name",""), "w": 0.38},
+        {"label": "HL Executive Sign.",     "img_path": hl_img,              "w": 0.62},
     ], 22)
 
-    draw_row([{"label": "Remark", "value": data.get("remark",""), "w": 1}], 11)
+    draw_row([
+        {"label": "Remark", "value": data.get("remark",""), "w": 1}
+    ], 11)
 
     # Footer
     c.setFillColor(BLUE)
     c.rect(ML, y - 9 * mm, BW, 9 * mm, fill=1, stroke=0)
     c.setFillColor(WHITE)
     c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(W / 2, y - 6 * mm, "Received Physical Count & Quality subject to verification")
-    y -= 9 * mm
+    c.drawCentredString(W / 2, y - 6 * mm,
+        "Received Physical Count & Quality subject to verification")
 
     # Border
     c.setStrokeColor(BLUE)
@@ -279,7 +298,15 @@ def build_seal_pdf(data: dict) -> bytes:
 
     c.save()
     buf.seek(0)
-    return buf.read()
+    result = buf.read()
+
+    # Cleanup temp files
+    for p in [sec_img, hl_img]:
+        if p and os.path.exists(p):
+            try: os.remove(p)
+            except: pass
+
+    return result
 
 
 def merge_pdfs(pod_bytes: bytes, seal_bytes: bytes) -> bytes:
@@ -309,17 +336,15 @@ def validate():
 
     pdf_bytes = request.files["pdf"].read()
     tmp_path  = f"downloads/tmp_{datetime.now().strftime('%H%M%S%f')}.pdf"
-
     with open(tmp_path, "wb") as f:
         f.write(pdf_bytes)
 
     try:
         pdf_invoice_id = extract_invoice_id(tmp_path)
-
         if not pdf_invoice_id:
             return jsonify({
                 "valid": False,
-                "error": "Could not read Invoice ID from this PDF. Make sure you uploaded the correct POD PDF."
+                "error": "Could not read Invoice ID from this PDF. Please check you uploaded the correct POD PDF."
             }), 400
 
         input_sheet, _ = get_sheets()
@@ -329,7 +354,7 @@ def validate():
             return jsonify({
                 "valid"     : False,
                 "invoice_id": pdf_invoice_id,
-                "error"     : f"Invoice ID '{pdf_invoice_id}' is not in today's sheet. Please contact your manager."
+                "error"     : f"Invoice ID '{pdf_invoice_id}' not found in today's records. Please contact your manager."
             }), 404
 
         return jsonify({
@@ -341,7 +366,7 @@ def validate():
         })
 
     except Exception as e:
-        return jsonify({"valid": False, "error": f"Server error: {str(e)}"}), 500
+        return jsonify({"valid": False, "error": f"Error: {str(e)}"}), 500
 
     finally:
         if os.path.exists(tmp_path):
@@ -358,7 +383,6 @@ def submit():
 
     pod_bytes = request.files["pdf"].read()
     tmp_path  = f"downloads/sub_{datetime.now().strftime('%H%M%S%f')}.pdf"
-
     with open(tmp_path, "wb") as f:
         f.write(pod_bytes)
 
@@ -377,14 +401,9 @@ def submit():
 
         pod_status = "VALID POD" if numeric_id(sheet_invoice_id) == numeric_id(pdf_invoice_id) else "INVALID POD"
 
-        # Always ensure headers exist
         ensure_output_header(output_sheet)
 
-        # Write FSN rows
-        base_row = [
-            city, date, store,
-            sheet_invoice_id, pdf_invoice_id, pod_status,
-        ]
+        base_row = [city, date, store, sheet_invoice_id, pdf_invoice_id, pod_status]
         seal_row = [
             seal_data.get("security_name", ""),
             seal_data.get("hl_name", ""),
@@ -404,12 +423,21 @@ def submit():
                     r["damaged_qty"], r["excess_qty"], r["scanning_qty"], r["returned_qty"],
                 ] + seal_row)
 
-        # Build and merge PDF
-        seal_bytes   = build_seal_pdf({**seal_data, "invoice_id": pdf_invoice_id, "store": store, "city": city})
+        seal_bytes   = build_seal_pdf({
+            **seal_data,
+            "invoice_id": pdf_invoice_id,
+            "store"     : store,
+            "city"      : city,
+        })
         merged_bytes = merge_pdfs(pod_bytes, seal_bytes)
+        fname = f"POD_{store.replace(' ','_')}_Inv{pdf_invoice_id}_{datetime.now().strftime('%d%m%Y')}.pdf"
 
-        fname = f"GRN_{store.replace(' ','_')}_Inv{pdf_invoice_id}_{datetime.now().strftime('%d%m%Y')}.pdf"
-        return send_file(io.BytesIO(merged_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
+        return send_file(
+            io.BytesIO(merged_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=fname
+        )
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
