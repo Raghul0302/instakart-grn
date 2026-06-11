@@ -237,18 +237,18 @@ body { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); min-h
 
         <div class="seal-row cols-1">
           <div class="cell">
-            <div class="cell-label">Inward Reg. Sl. No. <span class="req">*</span></div>
-            <input type="text" id="inwardReg" placeholder="Enter registration number" />
+            <div class="cell-label">Inward Reg. Sl. No.</div>
+            <input type="text" id="inwardReg" placeholder="Enter registration number (optional)" />
           </div>
         </div>
 
         <div class="seal-row cols-sign">
           <div class="cell">
-            <div class="cell-label">Security Name / ID <span class="req">*</span></div>
-            <input type="text" id="securityName" placeholder="Name / ID" />
+            <div class="cell-label">Security Name / ID</div>
+            <input type="text" id="securityName" placeholder="Name / ID (optional)" />
           </div>
           <div class="cell">
-            <div class="cell-label">Security Signature <span class="req">*</span> — draw with mouse</div>
+            <div class="cell-label">Security Signature — draw with mouse (optional)</div>
             <div class="sign-wrap">
               <canvas class="sign-canvas" id="secCanvas"></canvas>
               <span class="sign-placeholder" id="secPlaceholder">✍ Draw signature here</span>
@@ -259,8 +259,8 @@ body { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); min-h
 
         <div class="seal-row cols-sign">
           <div class="cell">
-            <div class="cell-label">HL Executive Name / ID <span class="req">*</span></div>
-            <input type="text" id="hlName" placeholder="Name / ID" />
+            <div class="cell-label">HL Executive Name / ID</div>
+            <input type="text" id="hlName" placeholder="Name / ID (optional)" />
           </div>
           <div class="cell">
             <div class="cell-label">HL Executive Signature <span class="req">*</span> — draw with mouse</div>
@@ -402,21 +402,18 @@ function showStep2(data) {
 
 // ── Submit ──
 async function submitAndDownload() {
+  // Only these 5 are mandatory
   const required = [
     ['dateField','Date'], ['timeField','Time'],
-    ['invQty','Invoice Qty'], ['rcvdQty','Received Qty'],
-    ['inwardReg','Inward Reg. No.'],
-    ['securityName','Security Name'], ['hlName','HL Executive Name'],
+    ['invQty','Invoice Qty / Box'], ['rcvdQty','Received Qty / Box'],
   ];
   for (const [id, label] of required) {
     if (!document.getElementById(id).value.trim()) {
       showToast(`Please fill in: ${label}`, 'error'); return;
     }
   }
-
-  // Check signatures
-  if (!signatureData.sec) { showToast('Please draw Security signature', 'error'); return; }
-  if (!signatureData.hl)  { showToast('Please draw HL Executive signature', 'error'); return; }
+  // HL Executive signature is mandatory
+  if (!signatureData.hl) { showToast('HL Executive signature is required. Please draw it.', 'error'); return; }
 
   showLoading('Processing PDF & writing to sheet…');
 
