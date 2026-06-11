@@ -153,6 +153,24 @@ def ensure_output_header(output_sheet):
         pass
 
 
+
+def is_already_submitted(output_sheet, invoice_id):
+    """Check if this invoice ID was already submitted in POD_OUTPUT sheet."""
+    try:
+        all_vals = output_sheet.get_all_values()
+        if len(all_vals) <= 1:
+            return False
+        num = numeric_id(invoice_id)
+        # Column 4 (index 4) = PDF Invoice ID
+        for row in all_vals[1:]:
+            if len(row) > 4:
+                if numeric_id(str(row[4])) == num:
+                    return True
+        return False
+    except Exception:
+        return False
+
+
 def b64_to_tempfile(b64_str):
     """Decode base64 PNG and save to a temp file. Returns temp file path."""
     if not b64_str:
@@ -356,6 +374,15 @@ def validate():
                 "invoice_id": pdf_invoice_id,
                 "error"     : f"Invoice ID '{pdf_invoice_id}' not found in today's records. Please contact your manager."
             }), 404
+
+        # Check if already submitted
+        _, output_sheet = get_sheets()
+        if is_already_submitted(output_sheet, pdf_invoice_id):
+            return jsonify({
+                "valid"     : False,
+                "invoice_id": pdf_invoice_id,
+                "error"     : f"⚠️ Invoice '{pdf_invoice_id}' has already been uploaded. Please contact your manager if this is a mistake."
+            }), 409
 
         return jsonify({
             "valid"     : True,
