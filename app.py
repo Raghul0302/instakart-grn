@@ -10,6 +10,8 @@ import gspread
 from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
@@ -27,6 +29,7 @@ CORS(app)
 SPREADSHEET_NAME = "POD_OCR_DATA"
 INPUT_SHEET       = "POD_INPUT"
 OUTPUT_SHEET      = "POD_OUTPUT"
+DRIVE_FOLDER_ID   = "1iO_890vfSeAuDbMEfU5KgtxTUNcANeFM"
 
 HEADERS = [
     "City", "Date", "Store",
@@ -34,7 +37,7 @@ HEADERS = [
     "FSN", "Expected Qty", "Received Qty",
     "Damaged Qty", "Excess Qty", "Scanning Issue Qty", "Returned Qty",
     "Security Name", "HL Executive Name", "Inward Reg No",
-    "Invoice Qty Box", "Received Qty Box", "Remark", "Submitted At"
+    "Invoice Qty Box", "Received Qty Box", "Remark", "Drive Link", "Submitted At"
 ]
 
 SCOPES = [
@@ -63,7 +66,35 @@ def get_sheets():
         out = spreadsheet.worksheet(OUTPUT_SHEET)
     except Exception:
         out = spreadsheet.add_worksheet(title=OUTPUT_SHEET, rows=5000, cols=25)
-    return inp, out
+    return inp, out, creds
+
+# =========================================================
+# GOOGLE DRIVE UPLOAD
+# =========================================================
+
+def upload_to_drive(creds, file_bytes: bytes, filename: str) -> str:
+    """Upload PDF bytes to Google Drive folder, return shareable link."""
+    try:
+        service = build("drive", "v3", credentials=creds)
+        file_metadata = {
+            "name"   : filename,
+            "parents": [DRIVE_FOLDER_ID]
+        }
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype="application/pdf")
+        f = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id, webViewLink"
+        ).execute()
+        # Make it viewable by anyone with the link
+        service.permissions().create(
+            fileId=f["id"],
+            body={"type": "anyone", "role": "reader"}
+        ).execute()
+        return f.get("webViewLink", "")
+    except Exception as e:
+        print(f"Drive upload error: {e}")
+        return ""
 
 # =========================================================
 # HELPERS
@@ -148,20 +179,18 @@ def ensure_output_header(output_sheet):
         if not existing:
             output_sheet.append_row(HEADERS)
         elif existing[0] != HEADERS:
+            output_sheet.delete_rows(1)
             output_sheet.insert_row(HEADERS, 1)
     except Exception:
         pass
 
 
-
 def is_already_submitted(output_sheet, invoice_id):
-    """Check if this invoice ID was already submitted in POD_OUTPUT sheet."""
     try:
         all_vals = output_sheet.get_all_values()
         if len(all_vals) <= 1:
             return False
         num = numeric_id(invoice_id)
-        # Column 4 (index 4) = PDF Invoice ID
         for row in all_vals[1:]:
             if len(row) > 4:
                 if numeric_id(str(row[4])) == num:
@@ -172,7 +201,6 @@ def is_already_submitted(output_sheet, invoice_id):
 
 
 def b64_to_tempfile(b64_str):
-    """Decode base64 PNG and save to a temp file. Returns temp file path."""
     if not b64_str:
         return None
     try:
@@ -207,17 +235,14 @@ def build_seal_pdf(data: dict) -> bytes:
     BW = W - ML - MR
     y  = H - 25 * mm
 
-    # Save signatures to temp files
     sec_img = b64_to_tempfile(data.get("security_sign", ""))
     hl_img  = b64_to_tempfile(data.get("hl_sign", ""))
 
-    # Inv No header
     c.setFont("Helvetica-Bold", 13)
     c.setFillColor(BLACK)
     c.drawCentredString(W / 2, y, f"Inv No.: {data.get('invoice_id', '')}")
     y -= 13 * mm
 
-    # Title bar
     c.setFillColor(BLUE)
     c.rect(ML, y - 10 * mm, BW, 10 * mm, fill=1, stroke=0)
     c.setFillColor(WHITE)
@@ -225,7 +250,6 @@ def build_seal_pdf(data: dict) -> bytes:
     c.drawCentredString(W / 2, y - 6.5 * mm, "INSTAKART SERVICES PVT. LTD.")
     y -= 10 * mm
 
-    # Sub header
     c.setFillColor(LBLUE)
     c.setStrokeColor(BLUE)
     c.setLineWidth(0.5)
@@ -279,201 +303,3 @@ def build_seal_pdf(data: dict) -> bytes:
     draw_row([
         {"label": "Date",               "value": data.get("date",""),     "w": 0.28},
         {"label": "Time",               "value": data.get("time",""),     "w": 0.22},
-        {"label": "Invoice Qty / Box",  "value": data.get("inv_qty",""),  "w": 0.28},
-        {"label": "Received Qty / Box", "value": data.get("rcvd_qty",""), "w": 0.22},
-    ], 13)
-
-    draw_row([
-        {"label": "Inward Reg. Sl. No.", "value": data.get("inward_reg",""), "w": 1}
-    ], 10)
-
-    draw_row([
-        {"label": "Security Name / ID", "value": data.get("security_name",""), "w": 0.38},
-        {"label": "Security Sign.",     "img_path": sec_img,                   "w": 0.62},
-    ], 22)
-
-    draw_row([
-        {"label": "HL Executive Name / ID", "value": data.get("hl_name",""), "w": 0.38},
-        {"label": "HL Executive Sign.",     "img_path": hl_img,              "w": 0.62},
-    ], 22)
-
-    draw_row([
-        {"label": "Remark", "value": data.get("remark",""), "w": 1}
-    ], 11)
-
-    # Footer
-    c.setFillColor(BLUE)
-    c.rect(ML, y - 9 * mm, BW, 9 * mm, fill=1, stroke=0)
-    c.setFillColor(WHITE)
-    c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(W / 2, y - 6 * mm,
-        "Received Physical Count & Quality subject to verification")
-
-    # Border
-    c.setStrokeColor(BLUE)
-    c.setLineWidth(0.3)
-    c.rect(10, 10, W - 20, H - 20, fill=0, stroke=1)
-
-    c.save()
-    buf.seek(0)
-    result = buf.read()
-
-    # Cleanup temp files
-    for p in [sec_img, hl_img]:
-        if p and os.path.exists(p):
-            try: os.remove(p)
-            except: pass
-
-    return result
-
-
-def merge_pdfs(pod_bytes: bytes, seal_bytes: bytes) -> bytes:
-    writer = PdfWriter()
-    for reader in [PdfReader(io.BytesIO(pod_bytes)), PdfReader(io.BytesIO(seal_bytes))]:
-        for page in reader.pages:
-            writer.add_page(page)
-    out_buf = io.BytesIO()
-    writer.write(out_buf)
-    out_buf.seek(0)
-    return out_buf.read()
-
-
-# =========================================================
-# ROUTES
-# =========================================================
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
-@app.route("/validate", methods=["POST"])
-def validate():
-    if "pdf" not in request.files:
-        return jsonify({"valid": False, "error": "No PDF uploaded."}), 400
-
-    pdf_bytes = request.files["pdf"].read()
-    tmp_path  = f"downloads/tmp_{datetime.now().strftime('%H%M%S%f')}.pdf"
-    with open(tmp_path, "wb") as f:
-        f.write(pdf_bytes)
-
-    try:
-        pdf_invoice_id = extract_invoice_id(tmp_path)
-        if not pdf_invoice_id:
-            return jsonify({
-                "valid": False,
-                "error": "Could not read Invoice ID from this PDF. Please check you uploaded the correct POD PDF."
-            }), 400
-
-        input_sheet, _ = get_sheets()
-        record = lookup_sheet_record(input_sheet, pdf_invoice_id)
-
-        if not record:
-            return jsonify({
-                "valid"     : False,
-                "invoice_id": pdf_invoice_id,
-                "error"     : f"Invoice ID '{pdf_invoice_id}' not found in today's records. Please contact your manager."
-            }), 404
-
-        # Check if already submitted
-        _, output_sheet = get_sheets()
-        if is_already_submitted(output_sheet, pdf_invoice_id):
-            return jsonify({
-                "valid"     : False,
-                "invoice_id": pdf_invoice_id,
-                "error"     : f"⚠️ Invoice '{pdf_invoice_id}' has already been uploaded. Please contact your manager if this is a mistake."
-            }), 409
-
-        return jsonify({
-            "valid"     : True,
-            "invoice_id": pdf_invoice_id,
-            "store"     : str(record.get("Store", "")),
-            "city"      : str(record.get("City",  "")),
-            "date"      : str(record.get("Date",  "")),
-        })
-
-    except Exception as e:
-        return jsonify({"valid": False, "error": f"Error: {str(e)}"}), 500
-
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-
-@app.route("/submit", methods=["POST"])
-def submit():
-    seal_data_raw = request.form.get("seal_data", "{}")
-    seal_data     = json.loads(seal_data_raw)
-
-    if "pdf" not in request.files:
-        return jsonify({"error": "No PDF uploaded."}), 400
-
-    pod_bytes = request.files["pdf"].read()
-    tmp_path  = f"downloads/sub_{datetime.now().strftime('%H%M%S%f')}.pdf"
-    with open(tmp_path, "wb") as f:
-        f.write(pod_bytes)
-
-    try:
-        header, fsn_rows = parse_pod_pdf(tmp_path)
-        pdf_invoice_id   = header["invoice_id"] or seal_data.get("invoice_id", "UNKNOWN")
-
-        input_sheet, output_sheet = get_sheets()
-        record = lookup_sheet_record(input_sheet, pdf_invoice_id)
-
-        city             = seal_data.get("city",  record.get("City",  "") if record else "")
-        date             = seal_data.get("date",  record.get("Date",  "") if record else "")
-        store            = seal_data.get("store", record.get("Store", "") if record else "")
-        sheet_invoice_id = record.get("Invoice_ID", pdf_invoice_id) if record else pdf_invoice_id
-        submitted_at     = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        pod_status = "VALID POD" if numeric_id(sheet_invoice_id) == numeric_id(pdf_invoice_id) else "INVALID POD"
-
-        ensure_output_header(output_sheet)
-
-        base_row = [city, date, store, sheet_invoice_id, pdf_invoice_id, pod_status]
-        seal_row = [
-            seal_data.get("security_name", ""),
-            seal_data.get("hl_name", ""),
-            seal_data.get("inward_reg", ""),
-            seal_data.get("inv_qty", ""),
-            seal_data.get("rcvd_qty", ""),
-            seal_data.get("remark", ""),
-            submitted_at,
-        ]
-
-        if not fsn_rows:
-            output_sheet.append_row(base_row + ["NO RETURNS", 0, 0, 0, 0, 0, 0] + seal_row)
-        else:
-            for r in fsn_rows:
-                output_sheet.append_row(base_row + [
-                    r["fsn"], r["expected_qty"], r["received_qty"],
-                    r["damaged_qty"], r["excess_qty"], r["scanning_qty"], r["returned_qty"],
-                ] + seal_row)
-
-        seal_bytes   = build_seal_pdf({
-            **seal_data,
-            "invoice_id": pdf_invoice_id,
-            "store"     : store,
-            "city"      : city,
-        })
-        merged_bytes = merge_pdfs(pod_bytes, seal_bytes)
-        fname = f"POD_{store.replace(' ','_')}_Inv{pdf_invoice_id}_{datetime.now().strftime('%d%m%Y')}.pdf"
-
-        return send_file(
-            io.BytesIO(merged_bytes),
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name=fname
-        )
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False)
