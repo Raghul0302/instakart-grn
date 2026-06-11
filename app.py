@@ -29,6 +29,15 @@ SPREADSHEET_NAME = "POD_OCR_DATA"
 INPUT_SHEET       = "POD_INPUT"
 OUTPUT_SHEET      = "POD_OUTPUT"
 
+HEADERS = [
+    "City", "Date", "Store",
+    "Sheet Invoice ID", "PDF Invoice ID", "POD Status",
+    "FSN", "Expected Qty", "Received Qty",
+    "Damaged Qty", "Excess Qty", "Scanning Issue Qty", "Returned Qty",
+    "Security Name", "HL Executive Name", "Inward Reg No",
+    "Invoice Qty Box", "Received Qty Box", "Remark", "Submitted At"
+]
+
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -37,7 +46,7 @@ SCOPES = [
 os.makedirs("downloads", exist_ok=True)
 
 # =========================================================
-# GOOGLE SHEETS CONNECTION
+# GOOGLE SHEETS
 # =========================================================
 
 def get_sheets():
@@ -54,7 +63,7 @@ def get_sheets():
     try:
         out = spreadsheet.worksheet(OUTPUT_SHEET)
     except Exception:
-        out = spreadsheet.add_worksheet(title=OUTPUT_SHEET, rows=5000, cols=20)
+        out = spreadsheet.add_worksheet(title=OUTPUT_SHEET, rows=5000, cols=25)
     return inp, out
 
 # =========================================================
@@ -69,8 +78,20 @@ def numeric_id(val):
 def extract_invoice_id(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         full_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    m = re.search(r'Invoice[:\s#]*\s*([A-Z0-9\-]+)', full_text, re.IGNORECASE)
-    return m.group(1).strip() if m else None
+    # Try multiple patterns
+    patterns = [
+        r'Invoice[:\s#No\.]*\s*([A-Z0-9\-]{5,20})',
+        r'Inv[:\s#No\.]*\s*([A-Z0-9\-]{5,20})',
+        r'Invoice\s+No[:\s]*([A-Z0-9\-]{5,20})',
+    ]
+    for pat in patterns:
+        m = re.search(pat, full_text, re.IGNORECASE)
+        if m:
+            val = m.group(1).strip()
+            # Must have at least 5 digits
+            if re.search(r'\d{5}', val):
+                return val
+    return None
 
 
 def parse_pod_pdf(pdf_path):
@@ -82,7 +103,7 @@ def parse_pod_pdf(pdf_path):
             return m.group(1).strip() if m else ""
 
         header = {
-            "invoice_id"   : _find(r'Invoice[:\s#]*\s*(\S+)'),
+            "invoice_id"   : _find(r'Invoice[:\s#No\.]*\s*([A-Z0-9\-]{5,20})'),
             "invoice_date" : _find(r'Invoice Date:\s*(\S+)'),
             "warehouse_id" : _find(r'Warehouse ID:\s*(\S+)'),
             "status"       : _find(r'Status:\s*(\S+)'),
@@ -97,8 +118,11 @@ def parse_pod_pdf(pdf_path):
             for table in (page.extract_tables() or []):
                 for row in (table or []):
                     if not row or not row[0]: continue
-                    fsn = row[0].strip()
+                    fsn = str(row[0]).strip()
                     if not re.fullmatch(r'[A-Z0-9]{10,20}', fsn): continue
+                    # Make sure row has enough columns
+                    while len(row) < 8:
+                        row.append("0")
                     fsn_rows.append({
                         "fsn"          : fsn,
                         "description"  : (row[1] or "").replace("\n", " ").strip(),
@@ -107,7 +131,7 @@ def parse_pod_pdf(pdf_path):
                         "damaged_qty"  : _qty(row[4]),
                         "excess_qty"   : _qty(row[5]),
                         "scanning_qty" : _qty(row[6]),
-                        "returned_qty" : _qty(row[7]),
+                        "returned_qty" : _qty(row[7]) if len(row) > 7 else 0,
                     })
 
     return header, fsn_rows
@@ -115,11 +139,24 @@ def parse_pod_pdf(pdf_path):
 
 def lookup_sheet_record(input_sheet, invoice_id):
     rows = input_sheet.get_all_records()
-    num = numeric_id(invoice_id)
+    num  = numeric_id(invoice_id)
     for row in rows:
         if numeric_id(str(row.get("Invoice_ID", ""))) == num:
             return row
     return None
+
+
+def ensure_output_header(output_sheet):
+    """Make sure the output sheet always has headers in row 1."""
+    try:
+        existing = output_sheet.get_all_values()
+        if not existing or existing[0] != HEADERS:
+            if not existing:
+                output_sheet.append_row(HEADERS)
+            else:
+                output_sheet.insert_row(HEADERS, 1)
+    except Exception:
+        pass
 
 
 # =========================================================
@@ -127,34 +164,26 @@ def lookup_sheet_record(input_sheet, invoice_id):
 # =========================================================
 
 def build_seal_pdf(data: dict) -> bytes:
-    """
-    Renders the GRN Seal as a proper A4 PDF page using ReportLab.
-    data keys: invoice_id, store, city, date, time, inv_qty,
-               rcvd_qty, inward_reg, security_name, security_sign_b64,
-               hl_name, hl_sign_b64, remark
-    """
     buf = io.BytesIO()
     c   = rl_canvas.Canvas(buf, pagesize=A4)
-    W, H = A4            # 595.28 x 841.89 pts
+    W, H = A4
     BLUE  = colors.HexColor("#1a3bb5")
     WHITE = colors.white
     BLACK = colors.HexColor("#141414")
     LBLUE = colors.HexColor("#eef1fb")
 
-    ML = 28 * mm
-    MR = 28 * mm
+    ML = 25 * mm
+    MR = 25 * mm
     BW = W - ML - MR
+    y  = H - 25 * mm
 
-    y = H - 28 * mm     # start from top
-
-    # ── Inv No ──
+    # Inv No
     c.setFont("Helvetica-Bold", 13)
     c.setFillColor(BLACK)
-    inv_label = f"Inv No.: {data.get('invoice_id', '—')}"
-    c.drawCentredString(W / 2, y, inv_label)
-    y -= 14 * mm
+    c.drawCentredString(W / 2, y, f"Inv No.: {data.get('invoice_id', '—')}")
+    y -= 13 * mm
 
-    # ── Title bar ──
+    # Title bar
     c.setFillColor(BLUE)
     c.rect(ML, y - 10 * mm, BW, 10 * mm, fill=1, stroke=0)
     c.setFillColor(WHITE)
@@ -162,7 +191,7 @@ def build_seal_pdf(data: dict) -> bytes:
     c.drawCentredString(W / 2, y - 6.5 * mm, "INSTAKART SERVICES PVT. LTD.")
     y -= 10 * mm
 
-    # ── Sub header: GRN SEAL | Store ──
+    # Sub header
     c.setFillColor(LBLUE)
     c.setStrokeColor(BLUE)
     c.setLineWidth(0.5)
@@ -171,8 +200,7 @@ def build_seal_pdf(data: dict) -> bytes:
     c.setFillColor(BLUE)
     c.setFont("Helvetica-Bold", 9)
     c.drawString(ML + 3 * mm, y - 5 * mm, "GRN SEAL")
-    store_name = data.get("store", "")
-    c.drawRightString(ML + BW - 3 * mm, y - 5 * mm, store_name)
+    c.drawRightString(ML + BW - 3 * mm, y - 5 * mm, data.get("store", ""))
     y -= 8 * mm
 
     def draw_row(cells, rh_mm):
@@ -192,53 +220,59 @@ def build_seal_pdf(data: dict) -> bytes:
             if cell.get("value"):
                 c.setFont("Helvetica-Bold", 11)
                 c.setFillColor(BLACK)
-                c.drawString(cx + 2.5 * mm, y - rh + 2.8 * mm, str(cell["value"]))
+                c.drawString(cx + 2.5 * mm, y - rh + 3 * mm, str(cell["value"]))
             if cell.get("sign_b64"):
                 try:
-                    img_data = base64.b64decode(cell["sign_b64"].split(",")[-1])
+                    raw = cell["sign_b64"]
+                    # strip data URI prefix if present
+                    if "," in raw:
+                        raw = raw.split(",", 1)[1]
+                    img_data = base64.b64decode(raw)
                     img_buf  = io.BytesIO(img_data)
                     c.drawImage(
                         img_buf,
                         cx + 1.5 * mm, y - rh + 2 * mm,
-                        cw - 3 * mm, rh - 5 * mm,
+                        cw - 3 * mm, rh - 6 * mm,
                         preserveAspectRatio=True, mask="auto"
                     )
-                except Exception:
-                    pass
+                except Exception as ex:
+                    # draw error text so we know it failed
+                    c.setFont("Helvetica", 7)
+                    c.setFillColor(colors.red)
+                    c.drawString(cx + 2 * mm, y - rh + 3 * mm, f"[sig err: {ex}]")
             cx += cw
         y -= rh
 
     draw_row([
-        {"label": "Date",               "value": data.get("date", ""),    "w": 0.28},
-        {"label": "Time",               "value": data.get("time", ""),    "w": 0.22},
-        {"label": "Invoice Qty / Box",  "value": data.get("inv_qty", ""), "w": 0.28},
+        {"label": "Date",               "value": data.get("date",""),     "w": 0.28},
+        {"label": "Time",               "value": data.get("time",""),     "w": 0.22},
+        {"label": "Invoice Qty / Box",  "value": data.get("inv_qty",""),  "w": 0.28},
         {"label": "Received Qty / Box", "value": data.get("rcvd_qty",""), "w": 0.22},
     ], 13)
 
-    draw_row([{"label": "Inward Reg. Sl. No.", "value": data.get("inward_reg", ""), "w": 1}], 10)
+    draw_row([{"label": "Inward Reg. Sl. No.", "value": data.get("inward_reg",""), "w": 1}], 10)
 
     draw_row([
-        {"label": "Security Name / ID", "value": data.get("security_name", ""),   "w": 0.38},
-        {"label": "Security Sign.",     "sign_b64": data.get("security_sign",""),  "w": 0.62},
-    ], 20)
+        {"label": "Security Name / ID", "value": data.get("security_name",""),  "w": 0.38},
+        {"label": "Security Sign.",     "sign_b64": data.get("security_sign",""), "w": 0.62},
+    ], 22)
 
     draw_row([
-        {"label": "HL Executive Name / ID", "value": data.get("hl_name", ""),    "w": 0.38},
-        {"label": "HL Executive Sign.",     "sign_b64": data.get("hl_sign",""),   "w": 0.62},
-    ], 20)
+        {"label": "HL Executive Name / ID", "value": data.get("hl_name",""),   "w": 0.38},
+        {"label": "HL Executive Sign.",     "sign_b64": data.get("hl_sign",""), "w": 0.62},
+    ], 22)
 
-    draw_row([{"label": "Remark", "value": data.get("remark", ""), "w": 1}], 11)
+    draw_row([{"label": "Remark", "value": data.get("remark",""), "w": 1}], 11)
 
-    # ── Footer ──
+    # Footer
     c.setFillColor(BLUE)
     c.rect(ML, y - 9 * mm, BW, 9 * mm, fill=1, stroke=0)
     c.setFillColor(WHITE)
     c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(W / 2, y - 6 * mm,
-        "Received Physical Count & Quality subject to verification")
+    c.drawCentredString(W / 2, y - 6 * mm, "Received Physical Count & Quality subject to verification")
     y -= 9 * mm
 
-    # ── Page border ──
+    # Border
     c.setStrokeColor(BLUE)
     c.setLineWidth(0.3)
     c.rect(10, 10, W - 20, H - 20, fill=0, stroke=1)
@@ -249,7 +283,7 @@ def build_seal_pdf(data: dict) -> bytes:
 
 
 def merge_pdfs(pod_bytes: bytes, seal_bytes: bytes) -> bytes:
-    writer  = PdfWriter()
+    writer = PdfWriter()
     for reader in [PdfReader(io.BytesIO(pod_bytes)), PdfReader(io.BytesIO(seal_bytes))]:
         for page in reader.pages:
             writer.add_page(page)
@@ -270,26 +304,23 @@ def index():
 
 @app.route("/validate", methods=["POST"])
 def validate():
-    """
-    Step 1: Darkstore uploads PDF.
-    We extract the invoice ID and check against Google Sheet.
-    Returns: { valid, invoice_id, store, city, date, error }
-    """
     if "pdf" not in request.files:
         return jsonify({"valid": False, "error": "No PDF uploaded."}), 400
 
-    pdf_file = request.files["pdf"]
-    pdf_bytes = pdf_file.read()
+    pdf_bytes = request.files["pdf"].read()
+    tmp_path  = f"downloads/tmp_{datetime.now().strftime('%H%M%S%f')}.pdf"
 
-    # Save temp
-    tmp_path = f"downloads/tmp_{datetime.now().strftime('%H%M%S%f')}.pdf"
     with open(tmp_path, "wb") as f:
         f.write(pdf_bytes)
 
     try:
         pdf_invoice_id = extract_invoice_id(tmp_path)
+
         if not pdf_invoice_id:
-            return jsonify({"valid": False, "error": "Could not read Invoice ID from PDF. Is this a valid POD PDF?"}), 400
+            return jsonify({
+                "valid": False,
+                "error": "Could not read Invoice ID from this PDF. Make sure you uploaded the correct POD PDF."
+            }), 400
 
         input_sheet, _ = get_sheets()
         record = lookup_sheet_record(input_sheet, pdf_invoice_id)
@@ -298,19 +329,19 @@ def validate():
             return jsonify({
                 "valid"     : False,
                 "invoice_id": pdf_invoice_id,
-                "error"     : f"Invoice ID {pdf_invoice_id} not found in records. Contact your manager."
+                "error"     : f"Invoice ID '{pdf_invoice_id}' is not in today's sheet. Please contact your manager."
             }), 404
 
         return jsonify({
             "valid"     : True,
             "invoice_id": pdf_invoice_id,
             "store"     : str(record.get("Store", "")),
-            "city"      : str(record.get("City", "")),
-            "date"      : str(record.get("Date", "")),
+            "city"      : str(record.get("City",  "")),
+            "date"      : str(record.get("Date",  "")),
         })
 
     except Exception as e:
-        return jsonify({"valid": False, "error": str(e)}), 500
+        return jsonify({"valid": False, "error": f"Server error: {str(e)}"}), 500
 
     finally:
         if os.path.exists(tmp_path):
@@ -319,33 +350,22 @@ def validate():
 
 @app.route("/submit", methods=["POST"])
 def submit():
-    """
-    Step 2: Seal form filled + signed.
-    - Runs full OCR on PDF
-    - Writes FSN returns to output sheet
-    - Generates seal PDF
-    - Merges POD + Seal → returns merged PDF
-    """
-    # ── Parse multipart ──
     seal_data_raw = request.form.get("seal_data", "{}")
     seal_data     = json.loads(seal_data_raw)
 
     if "pdf" not in request.files:
         return jsonify({"error": "No PDF uploaded."}), 400
 
-    pdf_file  = request.files["pdf"]
-    pod_bytes = pdf_file.read()
+    pod_bytes = request.files["pdf"].read()
+    tmp_path  = f"downloads/sub_{datetime.now().strftime('%H%M%S%f')}.pdf"
 
-    tmp_path = f"downloads/sub_{datetime.now().strftime('%H%M%S%f')}.pdf"
     with open(tmp_path, "wb") as f:
         f.write(pod_bytes)
 
     try:
-        # ── Parse PDF ──
         header, fsn_rows = parse_pod_pdf(tmp_path)
-        pdf_invoice_id   = header["invoice_id"]
+        pdf_invoice_id   = header["invoice_id"] or seal_data.get("invoice_id", "UNKNOWN")
 
-        # ── Sheet lookup ──
         input_sheet, output_sheet = get_sheets()
         record = lookup_sheet_record(input_sheet, pdf_invoice_id)
 
@@ -353,54 +373,43 @@ def submit():
         date             = seal_data.get("date",  record.get("Date",  "") if record else "")
         store            = seal_data.get("store", record.get("Store", "") if record else "")
         sheet_invoice_id = record.get("Invoice_ID", pdf_invoice_id) if record else pdf_invoice_id
+        submitted_at     = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        if numeric_id(sheet_invoice_id) == numeric_id(pdf_invoice_id):
-            pod_status = "VALID POD"
-        else:
-            pod_status = "INVALID POD"
+        pod_status = "VALID POD" if numeric_id(sheet_invoice_id) == numeric_id(pdf_invoice_id) else "INVALID POD"
 
-        # ── Ensure output sheet has header ──
-        existing = output_sheet.get_all_values()
-        if not existing:
-            output_sheet.append_row([
-                "City","Date","Store","Sheet Invoice ID","PDF Invoice ID",
-                "POD Status","FSN","Expected Qty","Received Qty",
-                "Damaged Qty","Excess Qty","Scanning Issue Qty","Returned Qty"
-            ])
+        # Always ensure headers exist
+        ensure_output_header(output_sheet)
 
-        # ── Write FSN rows ──
+        # Write FSN rows
+        base_row = [
+            city, date, store,
+            sheet_invoice_id, pdf_invoice_id, pod_status,
+        ]
+        seal_row = [
+            seal_data.get("security_name", ""),
+            seal_data.get("hl_name", ""),
+            seal_data.get("inward_reg", ""),
+            seal_data.get("inv_qty", ""),
+            seal_data.get("rcvd_qty", ""),
+            seal_data.get("remark", ""),
+            submitted_at,
+        ]
+
         if not fsn_rows:
-            output_sheet.append_row([
-                city, date, store, sheet_invoice_id, pdf_invoice_id,
-                pod_status, "NO RETURNS", 0, 0, 0, 0, 0, 0
-            ])
+            output_sheet.append_row(base_row + ["NO RETURNS", 0, 0, 0, 0, 0, 0] + seal_row)
         else:
             for r in fsn_rows:
-                output_sheet.append_row([
-                    city, date, store, sheet_invoice_id, pdf_invoice_id,
-                    pod_status,
+                output_sheet.append_row(base_row + [
                     r["fsn"], r["expected_qty"], r["received_qty"],
                     r["damaged_qty"], r["excess_qty"], r["scanning_qty"], r["returned_qty"],
-                ])
+                ] + seal_row)
 
-        # ── Build seal PDF ──
-        seal_bytes = build_seal_pdf({
-            **seal_data,
-            "invoice_id": pdf_invoice_id,
-            "store"     : store,
-            "city"      : city,
-        })
-
-        # ── Merge ──
+        # Build and merge PDF
+        seal_bytes   = build_seal_pdf({**seal_data, "invoice_id": pdf_invoice_id, "store": store, "city": city})
         merged_bytes = merge_pdfs(pod_bytes, seal_bytes)
 
-        fname = f"GRN_{store.replace(' ','_')}_Inv{pdf_invoice_id}.pdf"
-        return send_file(
-            io.BytesIO(merged_bytes),
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name=fname
-        )
+        fname = f"GRN_{store.replace(' ','_')}_Inv{pdf_invoice_id}_{datetime.now().strftime('%d%m%Y')}.pdf"
+        return send_file(io.BytesIO(merged_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
