@@ -31,7 +31,6 @@ SPREADSHEET_NAME = "POD_OCR_DATA"
 INPUT_SHEET       = "POD_INPUT"
 OUTPUT_SHEET      = "POD_OUTPUT"
 SUMMARY_SHEET     = "POD_SUMMARY"
-DRIVE_FOLDER_ID   = "1iO_890vfSeAuDbMEfU5KgtxTUNcANeFM"
 
 HEADERS = [
     "City", "Date", "Store",
@@ -87,19 +86,18 @@ def get_sheets():
 # =========================================================
 
 def upload_to_drive(creds, file_bytes: bytes, filename: str) -> str:
-    """Upload PDF bytes to Google Drive folder, return shareable link."""
+    """Upload PDF to service account Drive, return shareable link."""
     try:
         service = build("drive", "v3", credentials=creds)
-        file_metadata = {
-            "name"   : filename,
-            "parents": [DRIVE_FOLDER_ID]
-        }
+        # Upload to service account's own Drive (no parent folder = no quota issue)
+        file_metadata = {"name": filename}
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype="application/pdf")
         f = service.files().create(
             body=file_metadata,
             media_body=media,
             fields="id, webViewLink"
         ).execute()
+        # Make it viewable by anyone with the link
         service.permissions().create(
             fileId=f["id"],
             body={"type": "anyone", "role": "reader"}
@@ -502,14 +500,12 @@ def submit():
         ]
 
         if not fsn_rows:
-            # No FSN rows — single row, drive link included
             output_sheet.append_row(
                 base_row + ["NO RETURNS", 0, 0, 0, 0, 0, 0] +
                 seal_row_no_link + [drive_link, submitted_at]
             )
         else:
             for i, r in enumerate(fsn_rows):
-                # Drive link only on FIRST row, empty for the rest
                 row_drive_link = drive_link if i == 0 else ""
                 output_sheet.append_row(
                     base_row + [
