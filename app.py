@@ -6,6 +6,7 @@ import base64
 import tempfile
 import pdfplumber
 import gspread
+import sys
 
 from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
@@ -29,6 +30,7 @@ CORS(app)
 SPREADSHEET_NAME = "POD_OCR_DATA"
 INPUT_SHEET       = "POD_INPUT"
 OUTPUT_SHEET      = "POD_OUTPUT"
+SUMMARY_SHEET     = "POD_SUMMARY"
 DRIVE_FOLDER_ID   = "1iO_890vfSeAuDbMEfU5KgtxTUNcANeFM"
 
 HEADERS = [
@@ -38,6 +40,14 @@ HEADERS = [
     "Damaged Qty", "Excess Qty", "Scanning Issue Qty", "Returned Qty",
     "Security Name", "HL Executive Name", "Inward Reg No",
     "Invoice Qty Box", "Received Qty Box", "Remark", "Drive Link", "Submitted At"
+]
+
+SUMMARY_HEADERS = [
+    "City", "Date", "Store",
+    "Sheet Invoice ID", "PDF Invoice ID", "POD Status",
+    "Security Name", "HL Executive Name", "Inward Reg No",
+    "Invoice Qty Box", "Received Qty Box", "Remark",
+    "Drive Link", "Submitted At"
 ]
 
 SCOPES = [
@@ -66,7 +76,11 @@ def get_sheets():
         out = spreadsheet.worksheet(OUTPUT_SHEET)
     except Exception:
         out = spreadsheet.add_worksheet(title=OUTPUT_SHEET, rows=5000, cols=25)
-    return inp, out, creds
+    try:
+        summary = spreadsheet.worksheet(SUMMARY_SHEET)
+    except Exception:
+        summary = spreadsheet.add_worksheet(title=SUMMARY_SHEET, rows=5000, cols=20)
+    return inp, out, summary, creds
 
 # =========================================================
 # GOOGLE DRIVE UPLOAD
@@ -86,14 +100,15 @@ def upload_to_drive(creds, file_bytes: bytes, filename: str) -> str:
             media_body=media,
             fields="id, webViewLink"
         ).execute()
-        # Make it viewable by anyone with the link
         service.permissions().create(
             fileId=f["id"],
             body={"type": "anyone", "role": "reader"}
         ).execute()
-        return f.get("webViewLink", "")
+        link = f.get("webViewLink", "")
+        print(f"DRIVE UPLOAD SUCCESS: {link}", file=sys.stderr, flush=True)
+        return link
     except Exception as e:
-        print(f"Drive upload error: {e}")
+        print(f"DRIVE UPLOAD ERROR: {str(e)}", file=sys.stderr, flush=True)
         return ""
 
 # =========================================================
@@ -181,6 +196,18 @@ def ensure_output_header(output_sheet):
         elif existing[0] != HEADERS:
             output_sheet.delete_rows(1)
             output_sheet.insert_row(HEADERS, 1)
+    except Exception:
+        pass
+
+
+def ensure_summary_header(summary_sheet):
+    try:
+        existing = summary_sheet.get_all_values()
+        if not existing:
+            summary_sheet.append_row(SUMMARY_HEADERS)
+        elif existing[0] != SUMMARY_HEADERS:
+            summary_sheet.delete_rows(1)
+            summary_sheet.insert_row(SUMMARY_HEADERS, 1)
     except Exception:
         pass
 
@@ -386,7 +413,7 @@ def validate():
                 "error": "Could not read Invoice ID from this PDF. Please check you uploaded the correct POD PDF."
             }), 400
 
-        input_sheet, _, _creds = get_sheets()
+        input_sheet, _, _, _creds = get_sheets()
         record = lookup_sheet_record(input_sheet, pdf_invoice_id)
 
         if not record:
@@ -396,7 +423,7 @@ def validate():
                 "error"     : f"Invoice ID '{pdf_invoice_id}' not found in today's records. Please contact your manager."
             }), 404
 
-        _, output_sheet, _creds = get_sheets()
+        _, output_sheet, _, _creds = get_sheets()
         if is_already_submitted(output_sheet, pdf_invoice_id):
             return jsonify({
                 "valid"     : False,
@@ -437,7 +464,7 @@ def submit():
         header, fsn_rows = parse_pod_pdf(tmp_path)
         pdf_invoice_id   = header["invoice_id"] or seal_data.get("invoice_id", "UNKNOWN")
 
-        input_sheet, output_sheet, creds = get_sheets()
+        input_sheet, output_sheet, summary_sheet, creds = get_sheets()
         record = lookup_sheet_record(input_sheet, pdf_invoice_id)
 
         city             = seal_data.get("city",  record.get("City",  "") if record else "")
@@ -458,13 +485,44 @@ def submit():
         merged_bytes = merge_pdfs(pod_bytes, seal_bytes)
         fname = f"POD_{store.replace(' ','_')}_Inv{pdf_invoice_id}_{datetime.now().strftime('%d%m%Y')}.pdf"
 
-        # Upload to Google Drive and get link
+        # Upload to Google Drive
         drive_link = upload_to_drive(creds, merged_bytes, fname)
 
+        # ── POD_OUTPUT sheet ──
         ensure_output_header(output_sheet)
 
         base_row = [city, date, store, sheet_invoice_id, pdf_invoice_id, pod_status]
-        seal_row = [
+        seal_row_no_link = [
+            seal_data.get("security_name", ""),
+            seal_data.get("hl_name", ""),
+            seal_data.get("inward_reg", ""),
+            seal_data.get("inv_qty", ""),
+            seal_data.get("rcvd_qty", ""),
+            seal_data.get("remark", ""),
+        ]
+
+        if not fsn_rows:
+            # No FSN rows — single row, drive link included
+            output_sheet.append_row(
+                base_row + ["NO RETURNS", 0, 0, 0, 0, 0, 0] +
+                seal_row_no_link + [drive_link, submitted_at]
+            )
+        else:
+            for i, r in enumerate(fsn_rows):
+                # Drive link only on FIRST row, empty for the rest
+                row_drive_link = drive_link if i == 0 else ""
+                output_sheet.append_row(
+                    base_row + [
+                        r["fsn"], r["expected_qty"], r["received_qty"],
+                        r["damaged_qty"], r["excess_qty"], r["scanning_qty"], r["returned_qty"],
+                    ] + seal_row_no_link + [row_drive_link, submitted_at]
+                )
+
+        # ── POD_SUMMARY sheet — one row per invoice ──
+        ensure_summary_header(summary_sheet)
+        summary_sheet.append_row([
+            city, date, store,
+            sheet_invoice_id, pdf_invoice_id, pod_status,
             seal_data.get("security_name", ""),
             seal_data.get("hl_name", ""),
             seal_data.get("inward_reg", ""),
@@ -473,16 +531,7 @@ def submit():
             seal_data.get("remark", ""),
             drive_link,
             submitted_at,
-        ]
-
-        if not fsn_rows:
-            output_sheet.append_row(base_row + ["NO RETURNS", 0, 0, 0, 0, 0, 0] + seal_row)
-        else:
-            for r in fsn_rows:
-                output_sheet.append_row(base_row + [
-                    r["fsn"], r["expected_qty"], r["received_qty"],
-                    r["damaged_qty"], r["excess_qty"], r["scanning_qty"], r["returned_qty"],
-                ] + seal_row)
+        ])
 
         return send_file(
             io.BytesIO(merged_bytes),
@@ -492,6 +541,7 @@ def submit():
         )
 
     except Exception as e:
+        print(f"SUBMIT ERROR: {str(e)}", file=sys.stderr, flush=True)
         return jsonify({"error": str(e)}), 500
 
     finally:
