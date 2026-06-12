@@ -31,7 +31,7 @@ SPREADSHEET_NAME = "POD_OCR_DATA"
 INPUT_SHEET       = "POD_INPUT"
 OUTPUT_SHEET      = "POD_OUTPUT"
 SUMMARY_SHEET     = "POD_SUMMARY"
-DRIVE_FOLDER_ID   = "1iO_890vfSeAuDbMEfU5KgtxTUNcANeFM"
+DRIVE_FOLDER_ID   = "0AD4KdDfAgONUUk9PVA"
 
 HEADERS = [
     "City", "Date", "Store",
@@ -87,12 +87,13 @@ def get_sheets():
 # =========================================================
 
 def upload_to_drive(creds, file_bytes: bytes, filename: str) -> str:
-    """Upload PDF to Google Drive folder, return shareable link."""
+    """Upload PDF to Google Shared Drive folder, return shareable link."""
     try:
         service = build("drive", "v3", credentials=creds)
         file_metadata = {
-            "name"   : filename,
-            "parents": [DRIVE_FOLDER_ID]
+            "name"    : filename,
+            "parents" : [DRIVE_FOLDER_ID],
+            "driveId" : DRIVE_FOLDER_ID
         }
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype="application/pdf")
         f = service.files().create(
@@ -487,7 +488,7 @@ def submit():
         merged_bytes = merge_pdfs(pod_bytes, seal_bytes)
         fname = f"POD_{store.replace(' ','_')}_Inv{pdf_invoice_id}_{datetime.now().strftime('%d%m%Y')}.pdf"
 
-        # Upload to Google Drive
+        # Upload to Google Shared Drive
         drive_link = upload_to_drive(creds, merged_bytes, fname)
 
         # ── POD_OUTPUT sheet ──
