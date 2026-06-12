@@ -27,11 +27,12 @@ CORS(app)
 # CONFIG
 # =========================================================
 
-SPREADSHEET_NAME = "POD_OCR_DATA"
-INPUT_SHEET       = "POD_INPUT"
-OUTPUT_SHEET      = "POD_OUTPUT"
-SUMMARY_SHEET     = "POD_SUMMARY"
-DRIVE_FOLDER_ID   = "0AD4KdDfAgONUUk9PVA"
+SPREADSHEET_NAME  = "POD_OCR_DATA"
+INPUT_SHEET        = "POD_INPUT"
+OUTPUT_SHEET       = "POD_OUTPUT"
+SUMMARY_SHEET      = "POD_SUMMARY"
+DRIVE_FOLDER_ID    = "0AD4KdDfAgONUUk9PVA"
+DRIVE_NOTIFY_EMAIL = "rraghul@ninjacart.com"
 
 HEADERS = [
     "City", "Date", "Store",
@@ -87,7 +88,7 @@ def get_sheets():
 # =========================================================
 
 def upload_to_drive(creds, file_bytes: bytes, filename: str) -> str:
-    """Upload PDF to Google Shared Drive folder, return shareable link."""
+    """Upload PDF to Google Shared Drive folder, return link."""
     try:
         service = build("drive", "v3", credentials=creds)
         file_metadata = {
@@ -102,10 +103,16 @@ def upload_to_drive(creds, file_bytes: bytes, filename: str) -> str:
             fields="id, webViewLink",
             supportsAllDrives=True
         ).execute()
+        # Share with office email instead of public
         service.permissions().create(
             fileId=f["id"],
-            body={"type": "anyone", "role": "reader"},
-            supportsAllDrives=True
+            body={
+                "type"        : "user",
+                "role"        : "reader",
+                "emailAddress": DRIVE_NOTIFY_EMAIL
+            },
+            supportsAllDrives=True,
+            sendNotificationEmail=False
         ).execute()
         link = f.get("webViewLink", "")
         print(f"DRIVE UPLOAD SUCCESS: {link}", file=sys.stderr, flush=True)
